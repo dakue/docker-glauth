@@ -17,6 +17,6 @@ RUN set -x && \
 
 ADD docker-entrypoint.sh /
 
-EXPOSE [1389, 1636, 5555]
+EXPOSE 1389 1636 5555
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["glauth"]
