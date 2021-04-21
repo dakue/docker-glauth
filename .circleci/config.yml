@@ -1,29 +1,56 @@
-version: 2
+version: 2.1
+
+commands:
+  docker-login:
+    steps:
+      - run:
+          name: Login to Dockerhub
+          command: echo $DOCKERHUB_PASSWORD | docker login --username $DOCKERHUB_USERNAME --password-stdin
+  buildx-install:
+    steps:
+      - run:
+          name: Install Docker buildx
+          command: |
+            mkdir -p ~/.docker/cli-plugins
+            curl -sSL -o ~/.docker/cli-plugins/docker-buildx https://github.com/docker/buildx/releases/download/v0.5.1/buildx-v0.5.1.linux-amd64
+            chmod a+x ~/.docker/cli-plugins/docker-buildx
+      - run:
+          name: Initialize Docker buildx
+          command: docker buildx install
+      - run:
+          name: Start multiarch/qemu-user-static container
+          command: docker run --rm --privileged multiarch/qemu-user-static:5.2.0-2 --reset -p yes
+      - run:
+          name: Create Docker context
+          command: docker context create docker-multiarch
+      - run:
+          name: Create docker-multiarch builder
+          command: |
+            docker buildx create --name docker-multiarch --platform linux/386,linux/amd64,linux/arm/v5,linux/arm/v6,linux/arm/v7,linux/arm64,linux/mips64le,linux/ppc64le,linux/riscv64,linux/s390x --driver docker-container docker-multiarch
+      - run:
+          name: Inspect & bootstrap docker-multiarch builder
+          command: docker buildx inspect --builder docker-multiarch --bootstrap
+      - run:
+          name: Set docker-multiarch as default builder
+          command: docker buildx use docker-multiarch
+
 jobs:
   build:
     docker:
-      - image: docker:stable
+      - image: docker:stable-git
         auth:
           username: $DOCKERHUB_USERNAME
           password: $DOCKERHUB_PASSWORD
     steps:
       - checkout
       - setup_remote_docker:
-          version: 18.09.3
-      - run: apk add make curl
-      - run: mkdir -vp ~/.docker/cli-plugins/
-      - run: curl --silent -L --output ~/.docker/cli-plugins/docker-buildx https://github.com/docker/buildx/releases/download/v0.3.1/buildx-v0.3.1.linux-amd64
-      - run: chmod a+x ~/.docker/cli-plugins/docker-buildx
-      - run: echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-      - run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-      - run: docker buildx create --name multiarch --driver docker-container --use
-      - run: docker buildx inspect --bootstrap
-      - run: docker buildx ls
+          version: 20.10.2
+      - run: apk add --no-cache curl
+      - docker-login
+      - buildx-install
       - run: |
-          docker buildx build --push \
-            --platform linux/arm64,linux/amd64 \
-            --tag dakue/docker-glauth:latest .
-
+          export DOCKER_TAG="$(echo << pipeline.git.revision >> | cut -c 1-7)"
+          docker buildx build --push --platform linux/arm64,linux/amd64 --tag dakue/docker-glauth:latest --tag dakue/docker-glauth:$DOCKER_TAG .
 workflows:
   version: 2
   build:
